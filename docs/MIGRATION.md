@@ -1,72 +1,56 @@
 # Migration from the notebook
 
-`voice_and_attribution_extraction.ipynb` (revision `2026-09-03-r9`) became this
-package. This document maps the old cells to the new modules and records every
-behavioural change, so results produced before and after can be compared.
+`newsvoice` began as a Jupyter notebook that was circulated privately before this
+package existed. If you were given that notebook, or you have results produced
+with it, this page tells you what changed.
 
-## Where each cell went
+If you are new here, you can skip this file entirely.
 
-| Notebook cell | Now |
-|---|---|
-| Setup / imports | `newsvoice.load_pipeline()` |
-| Data input (Drive mount) | `extract_corpus()` arguments, or the CLI |
-| Layer 1 — `find_quote_spans` | `newsvoice.quotes` |
-| Layer 2 — `find_cues` | `newsvoice.cues` |
-| Layer 3 — `expand_speaker`, `cue_subject`, `cue_content` | `newsvoice.syntax` |
-| Layer 4 — `entity_type` | `newsvoice.actors` |
-| Layer 5 — `canonicalise` | `newsvoice.actors` |
-| Layer 6 — `classify_*` | `newsvoice.segments` |
-| Layer 7 — `build_indirect_segments` | `newsvoice.segments` |
-| Layer 8 — `assign_quotes` | `newsvoice.assignment` |
-| Orchestration — `extract_document` | `newsvoice.pipeline` |
-| Single-document check | `demo.ipynb` |
-| Regression diagnostics | `tests/` |
-| Corpus run + export | `extract_corpus()`, or the CLI |
-| *(new)* | `newsvoice.normalise_paragraphs` — input repair, see KNOWN_ISSUES #1 |
+## The one behavioural change
 
-Layers 4 and 5 share a module. They were merged to eliminate the duplicated
-gazetteers described below; separating them again would reintroduce the risk.
+**Reflexive pronoun typing.** The notebook defined its pronoun table twice, in
+two different cells, and the two versions differed: one omitted `himself`,
+`herself`, `themselves` and `itself`. Because notebook cells share a namespace,
+which version was in effect depended on the order cells had been run in — a
+difference invisible in the output.
 
-## Behavioural changes
+The package keeps the complete table. For a corpus produced by running the
+notebook top to bottom, this reproduces what you already have. Output differs
+only where a speaker was referred to by a reflexive pronoun *and* the cells had
+been re-run out of order, in which case that speaker was typed `PERSON` and is
+now typed `GROUP`.
 
-**One change affects output.** Everything else is structural.
+To check whether any of your rows were affected, look for `Speaker Mention`
+values that are reflexive pronouns. In most news corpora there will be very few,
+and often none.
 
-### Reflexive pronouns are now typed consistently
+Everything else is unchanged. The extraction functions were moved verbatim; none
+of the logic was rewritten or retuned during the move, precisely so that any
+difference in output has one candidate explanation.
 
-`PRONOUN_GENDER` was defined in both the Layer 4 and Layer 5 cells, and the two
-tables differed: Layer 4's omitted `himself`, `herself`, `themselves`, `itself`.
-`entity_type` was written in Layer 4, but because cells share one namespace and
-Layer 5 ran later, it saw Layer 5's table during a full corpus run — and Layer 4's
-if that cell was re-executed afterwards while iterating.
+## Before you compare results
 
-The package keeps the fifteen-entry table. For a corpus processed by running the
-notebook top to bottom, **this reproduces what you already have**: Layer 5's table
-was in effect. Output differs only if a run had the Layer 4 cell executed after
-Layer 5, in which case a speaker referred to by a reflexive pronoun was typed
-`PERSON` and is now typed `GROUP`.
+Check whether your source text was hard-wrapped at a fixed column, as Factiva
+exports and PDF extractions usually are. A newline in the middle of a paragraph
+is read as a paragraph break, which can attach a quotation to the wrong speaker —
+see [issue 1](KNOWN_ISSUES.md).
 
-If you need to know whether a past run was affected, look for rows where
-`Speaker Mention` is a reflexive pronoun. In most news corpora there will be very
-few, and possibly none.
-
-### Everything else is unchanged by default
-
-`ExtractionConfig()` reproduces the notebook's constants exactly: `CTX = 130`,
-`ORPHAN_RECOVERY = True`, orphan gap 1200, sentence gap 2, headline cutoff 200,
-dedupe overlap 0.6. Calling `extract_document(doc_id, text, nlp)` without a config
-is behaviourally identical to the notebook's `extract_document(doc_id, text)`.
-
-The layer functions themselves were moved verbatim. Nothing in the extraction
-logic was rewritten, tuned, or "improved" during the move — that was a deliberate
-constraint, so that any difference in output has exactly one candidate
-explanation.
-
-## API changes
-
-### The parser is passed explicitly
+This affects the notebook and the package equally, so it is not a difference
+between them, but it does mean results from either may need regenerating:
 
 ```python
-# Notebook — nlp was a module-level global
+import newsvoice
+
+articles["full_text"] = articles["full_text"].map(newsvoice.normalise_paragraphs)
+```
+
+## What the API looks like now
+
+The notebook held a pipeline in a global variable and read from hard-coded paths.
+Both are now arguments.
+
+```python
+# Notebook
 rows = extract_document(doc_id, text)
 
 # Package
@@ -74,64 +58,32 @@ nlp = newsvoice.load_pipeline()
 rows = newsvoice.extract_document(doc_id, text, nlp)
 ```
 
-`classify_completeness` likewise takes the pipeline as a second argument.
-
-### Corpus runs take a DataFrame
+Corpus runs take a DataFrame rather than reading a fixed location:
 
 ```python
-# Notebook — paths hard-coded in a cell, Drive mounted
-BASE = Path('/content/drive/MyDrive/quotes_project')
-data_input = pd.read_csv(BASE / "data/00_master_articles.csv")
-# ... 25 lines of loop, error handling and export
-
-# Package
 quotes = newsvoice.extract_corpus(
     pd.read_csv("articles.csv"), nlp,
     id_column="article_id", text_column="full_text",
 )
-quotes.to_csv("quotes.csv", index=False)
 ```
 
-Failures are still recorded as rows with `Processing Status = "error"` and the
-exception in `Context Snippet`. Pass `on_error="raise"` to stop on the first one
-instead, which is what you want when debugging a new corpus.
+The tunables that were loose constants in the notebook — the context window,
+orphan recovery, the sentence gap — are now fields on `ExtractionConfig`, with
+defaults identical to the notebook's values. They are researcher degrees of
+freedom, so record `config.as_dict()` alongside your results.
 
-### Constants became configuration
-
-`CTX` and `ORPHAN_RECOVERY` were module-level globals edited in place. They are
-now fields on `ExtractionConfig`, along with three values that were buried as
-default arguments (`max_gap=1200`, `min_overlap=0.6`, `max_sentence_gap=2`) and
-one that was a literal in the headline check (`200`).
-
-This matters beyond tidiness: these are researcher degrees of freedom. Recording
-`config.as_dict()` alongside results makes a run reproducible by someone who does
-not have your notebook.
-
-## Reproducing a past run
+## Reproducing a notebook run
 
 ```python
 import newsvoice, pandas as pd
 
 nlp = newsvoice.load_pipeline("en_core_web_trf")
+articles = pd.read_csv("your_articles.csv")
 quotes = newsvoice.extract_corpus(
-    pd.read_csv("00_master_articles.csv"), nlp,
-    id_column="article_id", text_column="full_text",
+    articles, nlp, id_column="article_id", text_column="full_text",
 )
 ```
 
 To compare against notebook output, join on `Article Id` and
 `Evidence Start Character (0-based)`, which together identify a row. Any
-difference beyond reflexive-pronoun typing is a bug — please report it.
-
-## What was removed
-
-- `warnings.filterwarnings("ignore")`. A library must not reconfigure the host
-  process's warnings. If spaCy warnings are noisy for you, filter them in your
-  own script.
-- `from google.colab import drive` and the mount call.
-- The `DEMO` blocks at the foot of each layer cell. Their content survives as
-  tests and as the examples in `demo.ipynb`.
-- The regression diagnostics cell. It selected one of four check profiles by
-  string-matching against specific copyrighted news articles in a private corpus,
-  so it could not run elsewhere. Its assertions were rewritten against synthetic
-  fixtures in `tests/`.
+difference beyond reflexive-pronoun typing is a bug — please open an issue.
