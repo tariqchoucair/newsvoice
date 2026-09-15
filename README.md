@@ -7,36 +7,76 @@ saying, and how the attribution is made. It returns one row per attribution with
 a 22-column schema, including character offsets back into the source text so
 every extracted segment can be traced to the discourse it came from.
 
+## Try it without installing anything
+
+Open [`demo.ipynb`](demo.ipynb) in Google Colab, it works through a complete example on a sample article.
+
+## Install it on your computer
+
+You need Python 3.9 or newer. Open a terminal and run:
+
+```bash
+pip install git+https://github.com/tariqchoucair/newsvoice.git
+python -m spacy download en_core_web_trf
+```
+
+The second line downloads the language model (`en_core_web_trf`). It's about 450 MB, so it takes a
+few minutes. In a hurry? `python -m spacy download en_core_web_sm` is 12 MB and runs much
+faster, but it gets attributions wrong more often. See [Choice of model](#choice-of-model).
+
+## Usage
+
+You need a CSV with one row per article and at least two columns - an ID and the text:
+
+| article_id | full_text |
+|---|---|
+| a1 | Energy regulator warns of price rises\n\nThe Australian... |
+| a2 | Minister rejects claims\n\nThe minister said... |
+
+Any other columns can exist, but are ignored. Name your columns whatever you like; you'll tell the
+code which two (ID and text) to use. 
+
+Example of usage:
+
 ```python
 import pandas as pd
 import newsvoice
 
+# Load the language model
 nlp = newsvoice.load_pipeline()
-rows = newsvoice.extract_document("a1", article_text, nlp)
 
+# Read your articles
 articles = pd.read_csv("articles.csv")
+
+# Extract. One row out per attribution found
 quotes = newsvoice.extract_corpus(
-    articles, nlp, id_column="article_id", text_column="full_text"
+    articles,
+    nlp,
+    id_column="article_id",     # the column holding your IDs
+    text_column="full_text",    # the column holding your article text
 )
+
 quotes.to_csv("quotes.csv", index=False)
+print(f"{len(quotes):,} attributions from {len(articles):,} articles")
 ```
 
-Or from the command line:
+Or you can run it straight from the terminal:
 
 ```bash
 newsvoice articles.csv -o quotes.csv --id-column article_id --text-column full_text
 ```
 
-## Installation
+## One article at a time
 
-```bash
-pip install newsvoice
-python -m spacy download en_core_web_trf
+```python
+import newsvoice
+
+nlp = newsvoice.load_pipeline()
+rows = newsvoice.extract_document("a1", article_text, nlp)
 ```
 
-The transformer model is a large download. `en_core_web_sm` works and is much
-faster, but attribution accuracy is meaningfully worse — see
-[Choice of model](#choice-of-model).
+Returns a list of dictionaries rather than a table — useful for checking a
+single case or building your own loop.
 
 ## What it extracts
 
