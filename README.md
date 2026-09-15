@@ -11,6 +11,8 @@ every extracted segment can be traced to the discourse it came from.
 
 Open [`demo.ipynb`](demo.ipynb) in Google Colab, it works through a complete example on a sample article.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tariqchoucair/newsvoice/blob/main/demo.ipynb)
+
 ## Install it
 
 Via a notebook (e.g., Google Colab):
