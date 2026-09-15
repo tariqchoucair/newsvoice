@@ -205,6 +205,20 @@ fewer and only more explicit rows. A study reporting results from this pipeline 
 report the configuration alongside them.
 `config.as_dict()` returns a JSON-serialisable record.
 
+## Check your input format first
+
+Paragraphs must be **one line each**, separated by blank lines. The pipeline
+reads line structure as authorial structure, so a newline in the middle of a
+paragraph is taken for a paragraph break - and that is enough to attribute a
+quotation to the wrong speaker. If you have hard-wrapped data, normalise it first:
+
+```python
+articles["full_text"] = articles["full_text"].map(newsvoice.normalise_paragraphs)
+```
+
+Skipping this does not raise an error but it produces well-formed rows with
+quotations attached to the wrong actor. See [issue 1](docs/KNOWN_ISSUES.md).
+
 ## Choice of model
 
 The dependency heuristics in `syntax` were developed against
