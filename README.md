@@ -7,7 +7,7 @@ saying, and how the attribution is made. It returns one row per attribution with
 a 22-column schema, including character offsets back into the source text so
 every extracted segment can be traced to the discourse it came from.
 
-## Try it without installing anything
+## Try it
 
 Open [`demo.ipynb`](demo.ipynb) in Google Colab, it works through a complete example on a sample article.
 
@@ -26,14 +26,14 @@ faster, but it gets attributions wrong more often. See [Choice of model](#choice
 
 ## Usage
 
-You need a CSV with one row per article and at least two columns - an ID and the text:
+You need a dataset with one row per article and at least two columns - an ID and the text. For example:
 
 | article_id | full_text |
 |---|---|
 | a1 | Energy regulator warns of price rises\n\nThe Australian... |
 | a2 | Minister rejects claims\n\nThe minister said... |
 
-Any other columns can exist, but are ignored. Name your columns whatever you like; you'll tell the
+Any other columns can exist, but they are ignored. Name your columns whatever you like; you'll tell the
 code which two (ID and text) to use. 
 
 Example of usage:
@@ -66,7 +66,7 @@ Or you can run it straight from the terminal:
 newsvoice articles.csv -o quotes.csv --id-column article_id --text-column full_text
 ```
 
-## One article at a time
+You can also run one article at a time:
 
 ```python
 import newsvoice
@@ -75,12 +75,12 @@ nlp = newsvoice.load_pipeline()
 rows = newsvoice.extract_document("a1", article_text, nlp)
 ```
 
-Returns a list of dictionaries rather than a table — useful for checking a
+The individual run returns a list of dictionaries rather than a table, it is useful for checking a
 single case or building your own loop.
 
-## What it extracts
+## What newsvoice extracts
 
-Given this:
+Given a news text, for example:
 
 > Opposition Leader Peter Dutton has declared the plan would cost "a fraction"
 > of Labor's. "Today we announce seven sites," Mr Dutton told reporters.
@@ -89,13 +89,13 @@ Given this:
 > century ideology," said the union's national secretary Paul Farrow.
 
 it returns four attributions: two for Dutton (one hybrid, one direct), one for
-the union as an organisation, and one for Farrow — resolved from "the union's
+the union as an organisation, and one for Farrow - resolved from "the union's
 national secretary" to his name, and typed as a PERSON distinct from the
 ORGANISATION in the previous sentence.
 
 ## How it works
 
-Eight layers, each importable and replaceable on its own.
+The pipeline works with eight layers, each importable and replaceable individually.
 
 | Layer | Module | Does |
 |---|---|---|
@@ -108,10 +108,9 @@ Eight layers, each importable and replaceable on its own.
 | 7 | `segments` | Builds indirect segments by cutting quotes and attribution out of the reported content. |
 | 8 | `assignment` | Decides globally which cue owns which quotation. |
 
-Layer 8 is global by design. Resolving quote ownership locally, one cue at a
-time, lets whichever cue is processed first take a quotation belonging to a later
-one, and the resulting row is well-formed and wrong — a real speaker attached to
-a real quotation that they did not utter, which nothing downstream flags.
+Layer 8 is global by design because if we resolve quote ownership locally, one cue at a
+time, this will let whichever cue processed first take a quotation belonging to a later
+one, and the resulting row is well-formed but wrong.
 
 Three arbitration rules then run in `pipeline`: global ownership settles first,
 then cues reporting one speaker in one sentence are merged, then a cue whose
@@ -132,8 +131,7 @@ One row per attribution.
 | `Speaker Mention` | What the text actually said. Empty for recovered orphan quotations. |
 
 `Speaker Mention` and `Actor Canonical Name` are deliberately separate. The
-surface form is evidence; the canonical name is an inference, and conflating them
-makes the inference unauditable.
+surface form is reproduced from the evidence while the canonical name is an inference.
 
 **Content**
 
@@ -166,7 +164,7 @@ makes the inference unauditable.
 | `Processing Status` | `complete` / `complete_no_voice` / `error`. |
 
 A document with no attributions yields exactly one row with
-`complete_no_voice`, so documents never silently vanish from a corpus.
+`complete_no_voice`, so documents never silently disappear from the input corpus.
 
 ## Configuration
 
@@ -189,62 +187,31 @@ quotes = extract_corpus(articles, nlp, config=config)
 | `headline_max_chars` | 200 | First lines shorter than this, without sentence punctuation, are headlines. |
 | `dedupe_min_overlap` | 0.6 | Evidence overlap above which the shorter row is dropped. |
 
-These are researcher degrees of freedom with real effects on the output, not
-implementation details. `orphan_recovery` in particular sets an attribution
+These are researcher degrees of freedom with real effects on the output.
+`orphan_recovery` in particular sets an attribution
 standard: on, it follows news convention that a reader carries attribution
 across a paragraph break; off, it requires explicit attribution and yields
-fewer, more defensible rows. A study reporting results from this pipeline should
-report the configuration alongside them — `config.as_dict()` gives a
-JSON-serialisable record, and the CLI prints it on every run.
+fewer and only more explicit rows. A study reporting results from this pipeline should
+report the configuration alongside them.
+`config.as_dict()` returns a JSON-serialisable record.
 
 ## Choice of model
 
 The dependency heuristics in `syntax` were developed against
-`en_core_web_trf`. Smaller models run without complaint but degrade in specific,
-non-random ways: inverted attribution (`"Quote," said Ms Chen`) and clausal
-complement selection are the first things to go, and both cause
-**misattribution** rather than missed attribution. The failure is silent.
-
+`en_core_web_trf`. Smaller models can be used here, but degrade in specific,
+non-random ways: in our tests, inverted attribution (`"Quote," said Ms Chen`) and clausal
+complement selection are affected, and both cause **misattribution**.
 If you use anything other than `en_core_web_trf`, validate on your own material
 before trusting the output, and say which model you used in your methods.
 
 ## Validation
 
-There is no published accuracy figure for this tool. The test suite pins
-behaviour on synthetic text; it does not establish performance on real news, and
-the two are not the same claim.
-
-Anyone using this for research should hand-code a random sample of their own
-corpus and report agreement against it. Draw the sample from the corpus actually
-analysed rather than from an external benchmark or a convenience set of clear
-cases, so the estimate applies to the material in question. Attribution error is
-not uniformly distributed — it concentrates in passives, in epithets, and in
-multi-paragraph quotation turns — so a stratified sample over those constructions
-will tell you more than a random one of the same size.
-
-## Development
-
-```bash
-git clone <repository-url>
-cd newsvoice
-pip install -e ".[test]"
-python -m spacy download en_core_web_sm
-pytest
-```
-
-The suite is 196 tests and runs in a few seconds on `en_core_web_sm`. Tests whose
-outcome depends on parse quality are marked:
-
-```bash
-pytest -m "not model"    # model-independent core only
-```
-
-Every test fixture is synthetic. No news text ships with the package.
+Although we developed this tool via multiple tests, we recommend hand-coding a random sample of your own
+corpus and reporting agreement against it.
 
 ## Known issues
 
-See [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md). The list is deliberately
-specific and is not a disclaimer — each entry describes a construction where the
+See [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), each entry describes a construction where the
 output is wrong in a known way.
 
 ## Citation
