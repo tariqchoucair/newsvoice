@@ -224,6 +224,8 @@ output is wrong in a known way.
 
 ## Citation
 
+Choucair, T. (2026). newsvoice: Voice and attribution extraction from news text (Version 1.0.0) [Computer software]
+
 If you use this in published work, please cite it. See `CITATION.cff`, or the
 "Cite this repository" button on GitHub.
 
