@@ -15,6 +15,10 @@ Quick start
     nlp = newsvoice.load_pipeline()
     rows = newsvoice.extract_document("a1", article_text, nlp)
 
+If your text is hard-wrapped at a fixed column, normalise it first with
+:func:`newsvoice.normalise_paragraphs` — a mid-paragraph newline is read as a
+paragraph boundary and can misattribute quotations.
+
     articles = pd.read_csv("articles.csv")
     quotes = newsvoice.extract_corpus(
         articles, nlp, id_column="article_id", text_column="full_text"
@@ -37,6 +41,7 @@ from .pipeline import (
     extract_corpus,
     extract_document,
 )
+from .preprocess import detect_paragraph_style, normalise_paragraphs
 
 __all__ = [
     "COLUMNS",
@@ -44,6 +49,8 @@ __all__ = [
     "ExtractionConfig",
     "extract_corpus",
     "extract_document",
+    "detect_paragraph_style",
+    "normalise_paragraphs",
     "load_pipeline",
     "DEFAULT_MODEL",
     "__version__",

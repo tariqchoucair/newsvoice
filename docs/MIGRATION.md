@@ -22,6 +22,7 @@ behavioural change, so results produced before and after can be compared.
 | Single-document check | `demo.ipynb` |
 | Regression diagnostics | `tests/` |
 | Corpus run + export | `extract_corpus()`, or the CLI |
+| *(new)* | `newsvoice.normalise_paragraphs` — input repair, see KNOWN_ISSUES #1 |
 
 Layers 4 and 5 share a module. They were merged to eliminate the duplicated
 gazetteers described below; separating them again would reintroduce the risk.

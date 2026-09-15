@@ -4,7 +4,45 @@ Specific constructions where the output is wrong in a known way. Each entry says
 what happens, why, and what it would cost to change. Where a test exists it is
 named.
 
-## 1. `continued:` before a quotation produces no attribution
+## 1. Hard-wrapped input misattributes quotations
+
+**Symptom.** A document whose paragraphs are wrapped at a fixed column loses
+quotations and attributes others to the wrong speaker. In one reproduced case a
+three-paragraph quotation turn lost two paragraphs, one of which was attributed
+to an organisation named in the *following* sentence. Every row involved was
+well-formed: a real speaker, a real quotation, wrong pairing. Nothing in the
+output indicates it happened.
+
+**Cause.** The pipeline reads line structure as authorial structure — paragraph
+boundaries override dependency edges, and line boundaries bound quote pairing.
+That is correct for clean news text. A newline in the middle of a paragraph is
+therefore taken for a boundary the author never wrote, which shifts sentence
+segmentation enough to change the sentence-gap count in Layer 8 and hand a
+quotation to a different cue.
+
+**Scope.** Serious and common. Factiva exports, PDF extraction and many scrapers
+hard-wrap. Reproduced on both `en_core_web_sm` and `en_core_web_trf`.
+
+**Fix.** Normalise before extracting:
+
+```python
+articles["full_text"] = articles["full_text"].map(newsvoice.normalise_paragraphs)
+```
+
+`normalise_paragraphs` is deliberately **not** applied automatically, because
+doing so would silently change results for anyone whose input is already clean.
+It detects whether the document separates paragraphs with blank lines or with
+single newlines and treats each correctly — joining every newline in
+single-newline text would collapse the document into one paragraph, which is
+worse than the problem being fixed.
+
+Keep the normalised text: offsets index the string passed to the extractor.
+
+**Tests.** `tests/test_preprocess.py::test_hard_wrap_misattributes_a_quotation`
+pins the defect; `::test_normalisation_restores_the_correct_attribution` pins
+the repair.
+
+## 2. `continued:` before a quotation produces no attribution
 
 **Symptom.** `Mr Dale continued: "We are not finished."` yields no cue, so the
 quotation is left to orphan recovery or dropped. The full-stop form
@@ -27,7 +65,7 @@ prefer, not an oversight.
 **Test.** `tests/test_cues.py::test_continue_with_colon_introduced_quotation`,
 marked `xfail`.
 
-## 2. Accuracy degrades on non-transformer models, silently
+## 3. Accuracy degrades on non-transformer models, silently
 
 **Symptom.** Running with `en_core_web_sm` produces output that looks
 well-formed but misattributes more often, particularly for inverted attribution
@@ -42,14 +80,14 @@ the same constructions.
 sensitive to parse quality carry the `model` marker. If you must use a smaller
 model, validate on your own material first.
 
-## 3. Test suite has not been run against `en_core_web_trf`
+## 4. Test suite has not been run against `en_core_web_trf`
 
 The suite was written and verified on `en_core_web_sm`. Assertions marked
 `model` encode `sm` behaviour and some may need loosening — or may reveal genuine
 differences — under `trf`. **Run the full suite once on the transformer model
 before relying on it.**
 
-## 4. Acronyms do not resolve when the full name kept its determiner
+## 5. Acronyms do not resolve when the full name kept its determiner
 
 **Symptom.** In an article that first names *The Australian Energy Regulator* and
 later says *The AER*, the second mention stays as `AER` instead of resolving.
@@ -74,7 +112,7 @@ output, so it belongs in a version bump with a note rather than in a refactor.
 pins the cause; `::test_acronym_resolves_when_the_inventory_entry_keeps_its_determiner`
 is a strict `xfail` that will start failing the moment it is fixed.
 
-## 5. Lexical refusals are read as attributions
+## 6. Lexical refusals are read as attributions
 
 **Symptom.** *The regulator declined to say whether it would be reviewed*
 produces a row attributing content to the regulator. It is a non-disclosure: the
@@ -94,7 +132,7 @@ that *declined, saying the matter was closed* still reports.
 **Test.** `tests/test_cues.py::test_declined_to_say_produces_no_attribution`,
 strict `xfail`.
 
-## 6. Evaluative stance cues are treated as voice
+## 7. Evaluative stance cues are treated as voice
 
 Verbs such as `slam`, `attack`, `condemn`, `laud` are tier-2 cues, so
 `The regulator slammed the proposal` produces an attribution with
@@ -107,7 +145,7 @@ given voice", and this pipeline implements the second. If you need the first,
 filter on `Voice Type == "DIRECT"` or on the cue lemma, and say so in your
 methods.
 
-## 7. Claim counts index rhetorical style as well as prevalence
+## 8. Claim counts index rhetorical style as well as prevalence
 
 A speaker who argues in an enumerative register yields more rows than one making
 the same argument once. Rows from the same article and speaker are not
@@ -118,7 +156,7 @@ that changes what a distribution of rows describes.
 Not a defect, but a property of the output that is easy to forget when the result
 is a flat CSV.
 
-## 8. Orphan recovery can carry a speaker too far
+## 9. Orphan recovery can carry a speaker too far
 
 With `orphan_recovery=True` (the default), a quote-only paragraph inherits the
 most recent prior speaker within `max_orphan_gap` characters. In articles that
@@ -129,7 +167,7 @@ The guard requires nothing but whitespace between the attributed material and th
 quotation, which makes it conservative, but it is not exact. Set
 `orphan_recovery=False` for a stricter standard at the cost of recall.
 
-## 9. English only
+## 10. English only
 
 The cue lexicons, honorifics, epithet heads and morphological rules are English
 and largely Australian/British English (`emphasise` and `emphasize` are both
