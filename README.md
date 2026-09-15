@@ -7,10 +7,6 @@ saying, and how the attribution is made. It returns one row per attribution with
 a 22-column schema, including character offsets back into the source text so
 every extracted segment can be traced to the discourse it came from.
 
-It is built for content analysis rather than for fact-checking: it does not
-assess whether a claim is true, and it keeps indirect and partial attribution
-rather than discarding anything that is not a clean quotation.
-
 ```python
 import pandas as pd
 import newsvoice
