@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "newsvoice: Voice and attribution extraction from news text"
+abstract: >-
+  A layered pipeline for extracting voice and attribution from news text.
+  Identifies direct and indirect quotation, resolves speakers to canonical
+  actors through coreference and alias resolution, and classifies the
+  explicitness, position and completeness of each attribution. Returns one row
+  per attribution with character offsets into the source, so every extracted
+  segment is traceable to the discourse it came from.
+authors:
+  - family-names: Choucair
+    given-names: Tariq
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    affiliation: "Digital Media Research Centre, Queensland University of Technology"
+version: 1.0.0
+date-released: 2026-09-15
+license: MIT
+# doi: 10.5281/zenodo.XXXXXXX        # add the Zenodo concept DOI after first release
+# repository-code: "https://github.com/USERNAME/newsvoice"
+keywords:
+  - quotation extraction
+  - attribution
+  - content analysis
+  - computational social science
+  - news
+  - natural language processing

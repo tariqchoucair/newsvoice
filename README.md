@@ -1,0 +1,221 @@
+# newsvoice
+
+Voice and attribution extraction from news text.
+
+`newsvoice` finds who is given voice in a news article, what they are reported as
+saying, and how the attribution is made. It returns one row per attribution with
+a 22-column schema, including character offsets back into the source text so
+every extracted segment can be traced to the discourse it came from.
+
+It is built for content analysis rather than for fact-checking: it does not
+assess whether a claim is true, and it keeps indirect and partial attribution
+rather than discarding anything that is not a clean quotation.
+
+```python
+import pandas as pd
+import newsvoice
+
+nlp = newsvoice.load_pipeline()
+rows = newsvoice.extract_document("a1", article_text, nlp)
+
+articles = pd.read_csv("articles.csv")
+quotes = newsvoice.extract_corpus(
+    articles, nlp, id_column="article_id", text_column="full_text"
+)
+quotes.to_csv("quotes.csv", index=False)
+```
+
+Or from the command line:
+
+```bash
+newsvoice articles.csv -o quotes.csv --id-column article_id --text-column full_text
+```
+
+## Installation
+
+```bash
+pip install newsvoice
+python -m spacy download en_core_web_trf
+```
+
+The transformer model is a large download. `en_core_web_sm` works and is much
+faster, but attribution accuracy is meaningfully worse — see
+[Choice of model](#choice-of-model).
+
+## What it extracts
+
+Given this:
+
+> Opposition Leader Peter Dutton has declared the plan would cost "a fraction"
+> of Labor's. "Today we announce seven sites," Mr Dutton told reporters.
+>
+> The Australian Workers Union attacked the proposal. "This is a twentieth
+> century ideology," said the union's national secretary Paul Farrow.
+
+it returns four attributions: two for Dutton (one hybrid, one direct), one for
+the union as an organisation, and one for Farrow — resolved from "the union's
+national secretary" to his name, and typed as a PERSON distinct from the
+ORGANISATION in the previous sentence.
+
+## How it works
+
+Eight layers, each importable and replaceable on its own.
+
+| Layer | Module | Does |
+|---|---|---|
+| 1 | `quotes` | Finds quoted regions by pattern matching. No parse required. |
+| 2 | `cues` | Finds reporting expressions (`said`, `according to`) in two tiers. |
+| 3 | `syntax` | Dependency parse: who spoke, and what they said. |
+| 4 | `actors` | Types the actor as PERSON / ORGANISATION / GROUP. |
+| 5 | `actors` | Resolves epithets, pronouns, acronyms and metonymy to a canonical actor. |
+| 6 | `segments` | Assigns the three categorical columns. |
+| 7 | `segments` | Builds indirect segments by cutting quotes and attribution out of the reported content. |
+| 8 | `assignment` | Decides globally which cue owns which quotation. |
+
+Layer 8 is global by design. Resolving quote ownership locally, one cue at a
+time, lets whichever cue is processed first take a quotation belonging to a later
+one, and the resulting row is well-formed and wrong — a real speaker attached to
+a real quotation that they did not utter, which nothing downstream flags.
+
+Three arbitration rules then run in `pipeline`: global ownership settles first,
+then cues reporting one speaker in one sentence are merged, then a cue whose
+evidence span sits wholly inside an already-claimed one is suppressed. Two
+recovery passes pick up quotations that arbitration legitimately left unattached.
+
+## Output schema
+
+One row per attribution.
+
+**Identity**
+
+| Column | Values |
+|---|---|
+| `Article Id` | As supplied by the caller. |
+| `Actor Entity Type` | `PERSON` / `ORGANISATION` / `GROUP`, or empty when no speaker was resolved. |
+| `Actor Canonical Name` | Who the mention refers to, after coreference and alias resolution. |
+| `Speaker Mention` | What the text actually said. Empty for recovered orphan quotations. |
+
+`Speaker Mention` and `Actor Canonical Name` are deliberately separate. The
+surface form is evidence; the canonical name is an inference, and conflating them
+makes the inference unauditable.
+
+**Content**
+
+| Column | Values |
+|---|---|
+| `Voice Type` | `DIRECT` / `INDIRECT` / `HYBRID`. |
+| `Direct Segments (JSON)` | JSON list of quoted strings, verbatim from the source. |
+| `Indirect Segments (JSON)` | JSON list of reported-speech strings, verbatim from the source. |
+| `Total Voice Segments` | Count of both lists. |
+| `Direct Word Count`, `Indirect Word Count`, `Total Voiced Word Count` | Words, excluding punctuation and quotation marks. |
+| `Total Voiced Character Count` | Characters across all segments. |
+| `Quote Completeness` | `FULL_SENTENCE` / `CLAUSE` / `PHRASE` / `SINGLE_WORD` / `NOT_APPLICABLE`, from the longest direct segment. |
+
+**Attribution**
+
+| Column | Values |
+|---|---|
+| `Attribution Cues (JSON)` | JSON list of the reporting expressions on this row. |
+| `Attribution Explicitness` | `NAMED` / `DESCRIPTIVE_REFERENCE` / `PRONOUN` / `IMPLIED`. |
+| `Attribution Position` | `BEFORE_CONTENT` / `AFTER_CONTENT` / `INTERRUPTED` / `EMBEDDED` / `NOT_EXPLICIT`. |
+
+**Provenance**
+
+| Column | Values |
+|---|---|
+| `Evidence Span` | The stretch of source text this row was built from. |
+| `Evidence Start Character (0-based)`, `Evidence End Character (exclusive)` | Offsets into the text passed in. `text[start:end] == Evidence Span` always holds. |
+| `Document Position (%)` | Where the row sits in the document. |
+| `Context Snippet` | Evidence plus surrounding context, for human checking. |
+| `Processing Status` | `complete` / `complete_no_voice` / `error`. |
+
+A document with no attributions yields exactly one row with
+`complete_no_voice`, so documents never silently vanish from a corpus.
+
+## Configuration
+
+Everything tunable is on `ExtractionConfig`, and the defaults reproduce the
+values the pipeline was developed with.
+
+```python
+from newsvoice import ExtractionConfig, extract_corpus
+
+config = ExtractionConfig(orphan_recovery=False, max_sentence_gap=1)
+quotes = extract_corpus(articles, nlp, config=config)
+```
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `context_window` | 130 | Characters of context either side of the evidence span. |
+| `orphan_recovery` | `True` | Carry a speaker across a paragraph break onto a quote-only paragraph. |
+| `max_orphan_gap` | 1200 | Furthest an orphan quotation may be from its speaker. |
+| `max_sentence_gap` | 2 | Sentences a quotation may sit from its cue. |
+| `headline_max_chars` | 200 | First lines shorter than this, without sentence punctuation, are headlines. |
+| `dedupe_min_overlap` | 0.6 | Evidence overlap above which the shorter row is dropped. |
+
+These are researcher degrees of freedom with real effects on the output, not
+implementation details. `orphan_recovery` in particular sets an attribution
+standard: on, it follows news convention that a reader carries attribution
+across a paragraph break; off, it requires explicit attribution and yields
+fewer, more defensible rows. A study reporting results from this pipeline should
+report the configuration alongside them — `config.as_dict()` gives a
+JSON-serialisable record, and the CLI prints it on every run.
+
+## Choice of model
+
+The dependency heuristics in `syntax` were developed against
+`en_core_web_trf`. Smaller models run without complaint but degrade in specific,
+non-random ways: inverted attribution (`"Quote," said Ms Chen`) and clausal
+complement selection are the first things to go, and both cause
+**misattribution** rather than missed attribution. The failure is silent.
+
+If you use anything other than `en_core_web_trf`, validate on your own material
+before trusting the output, and say which model you used in your methods.
+
+## Validation
+
+There is no published accuracy figure for this tool. The test suite pins
+behaviour on synthetic text; it does not establish performance on real news, and
+the two are not the same claim.
+
+Anyone using this for research should hand-code a random sample of their own
+corpus and report agreement against it. Draw the sample from the corpus actually
+analysed rather than from an external benchmark or a convenience set of clear
+cases, so the estimate applies to the material in question. Attribution error is
+not uniformly distributed — it concentrates in passives, in epithets, and in
+multi-paragraph quotation turns — so a stratified sample over those constructions
+will tell you more than a random one of the same size.
+
+## Development
+
+```bash
+git clone <repository-url>
+cd newsvoice
+pip install -e ".[test]"
+python -m spacy download en_core_web_sm
+pytest
+```
+
+The suite is 196 tests and runs in a few seconds on `en_core_web_sm`. Tests whose
+outcome depends on parse quality are marked:
+
+```bash
+pytest -m "not model"    # model-independent core only
+```
+
+Every test fixture is synthetic. No news text ships with the package.
+
+## Known issues
+
+See [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md). The list is deliberately
+specific and is not a disclaimer — each entry describes a construction where the
+output is wrong in a known way.
+
+## Citation
+
+If you use this in published work, please cite it. See `CITATION.cff`, or the
+"Cite this repository" button on GitHub.
+
+## Licence
+
+MIT. See [`LICENSE`](LICENSE).
