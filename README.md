@@ -11,17 +11,24 @@ every extracted segment can be traced to the discourse it came from.
 
 Open [`demo.ipynb`](demo.ipynb) in Google Colab, it works through a complete example on a sample article.
 
-## Install it on your computer
+## Install it
 
-You need Python 3.9 or newer. Open a terminal and run:
+Via a notebook (e.g., Google Colab):
+
+```bash
+%pip install -q git+https://github.com/tariqchoucair/newsvoice.git
+%pip install -q https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
+```
+
+Locally, you need Python 3.9 or newer. Open a terminal and run:
 
 ```bash
 pip install git+https://github.com/tariqchoucair/newsvoice.git
 python -m spacy download en_core_web_trf
 ```
 
-The second line downloads the language model (`en_core_web_trf`). It's about 450 MB, so it takes a
-few minutes. In a hurry? `python -m spacy download en_core_web_sm` is 12 MB and runs much
+The second line downloads the language model (`en_core_web_trf`). It's about 450 MB, so it takes a few minutes.
+`python -m spacy download en_core_web_sm` is 12 MB and runs much
 faster, but it gets attributions wrong more often. See [Choice of model](#choice-of-model).
 
 ## Usage
@@ -36,14 +43,15 @@ You need a dataset with one row per article and at least two columns - an ID and
 Any other columns can exist, but they are ignored. Name your columns whatever you like; you'll tell the
 code which two (ID and text) to use. 
 
-Example of usage:
+Example of usage: 
 
 ```python
 import pandas as pd
 import newsvoice
 
 # Load the language model
-nlp = newsvoice.load_pipeline()
+MODEL = "en_core_web_trf" 
+nlp = newsvoice.load_pipeline(MODEL)
 
 # Read your articles
 articles = pd.read_csv("articles.csv")
